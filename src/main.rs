@@ -18,8 +18,9 @@ use core::scanner::{child_sizes, format_size};
 #[derive(Parser)]
 #[command(name = "klinit", version, about = "Clean up your Mac from the command line")]
 struct Cli {
+    /// Without a subcommand, opens the interactive full-screen interface.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -183,8 +184,23 @@ fn run_plan_with(plan: &core::plan::Plan, guard: Guard, yes: bool, permanent: bo
     report::print_clean(plan, &result, mode, json)
 }
 
+fn run_tui() -> Result<()> {
+    if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        return Ok(<Cli as clap::CommandFactory>::command().print_help()?);
+    }
+    let home = home_dir()?;
+    let app_dirs = app_dirs(&home);
+    let guard = guard_for(&home)?;
+    let mut app_guard = guard_for(&home)?;
+    for d in &app_dirs {
+        app_guard = app_guard.allow_app_dir(d);
+    }
+    tui::run(tui::Ctx { home, app_dirs, guard: std::sync::Arc::new(guard), app_guard: std::sync::Arc::new(app_guard) })
+}
+
 fn main() -> Result<()> {
-    match Cli::parse().command {
+    let Some(command) = Cli::parse().command else { return run_tui() };
+    match command {
         Command::Disk { path, top, json } => {
             let path = match path {
                 Some(p) => p,

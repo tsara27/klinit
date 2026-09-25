@@ -100,6 +100,12 @@ klinit disk ~/Library -n 30
 
 It still needs `--yes` to actually delete.
 
+### Full-screen interface
+
+Run `klinit` with no arguments to open a dashboard with tabs for Apps, Cleanup, Leftovers, Large files and Duplicates. Everything is clickable (tabs, rows, checkboxes, buttons) and also works from the keyboard: `tab`/`1`-`6` switch screens, `space` ticks, `a` selects all, `enter` acts on the selection, `r` rescans, `d` toggles Trash/permanent, `?` shows help, `q` quits.
+
+Nothing is deleted without a confirmation dialog, items go to the Trash unless you switch to permanent (which asks twice), and deletion uses the same safety checks as the subcommands. Set `KLINIT_NO_MOUSE=1` to turn mouse capture off. Piping the output (not a terminal) prints the usual help instead.
+
 ### Shell completions
 
 ```sh
