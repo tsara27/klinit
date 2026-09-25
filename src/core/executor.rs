@@ -17,6 +17,8 @@ pub enum Mode {
 pub struct Report {
     pub removed: Vec<(PathBuf, u64)>,
     pub skipped: Vec<(PathBuf, String)>,
+    /// Set when the audit log could not be written; deletions were still performed.
+    pub log_error: Option<String>,
 }
 
 impl Report {
@@ -44,9 +46,10 @@ pub fn execute(plan: &Plan, guard: &Guard, mode: Mode, log: Option<&Path>) -> Re
         };
         match result {
             Ok(()) => {
-                if mode != Mode::DryRun {
-                    append_log(log, &format!("{mode:?} {} ({} bytes)", real.display(), item.size));
-                }
+                if mode != Mode::DryRun
+                    && let Err(e) = append_log(log, &format!("{mode:?} {} ({} bytes)", real.display(), item.size)) {
+                        report.log_error.get_or_insert(e.to_string());
+                    }
                 report.removed.push((real, item.size));
             }
             Err(e) => report.skipped.push((item.path.clone(), e)),
@@ -60,23 +63,21 @@ fn remove(path: &Path) -> std::io::Result<()> {
     if fs::symlink_metadata(path)?.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) }
 }
 
-fn append_log(log: Option<&Path>, line: &str) {
-    let Some(path) = log else { return };
+fn append_log(log: Option<&Path>, line: &str) -> std::io::Result<()> {
+    let Some(path) = log else { return Ok(()) };
     if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent)?;
     }
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(f, "{line}");
-    }
+    writeln!(OpenOptions::new().create(true).append(true).open(path)?, "{line}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::plan::Item;
+    use crate::core::plan::{Category, Item};
 
     fn item(path: PathBuf) -> Item {
-        Item { path, size: 1, category: "test".into(), reason: "test".into() }
+        Item { path, size: 1, category: Category::Caches, reason: "test".into() }
     }
 
     fn fixture() -> (tempfile::TempDir, Guard) {
@@ -108,6 +109,18 @@ mod tests {
         assert_eq!(r.removed.len(), 1);
         assert!(!target.exists());
         assert!(fs::read_to_string(log).unwrap().contains("Permanent"));
+    }
+
+    #[test]
+    fn unwritable_log_is_reported() {
+        let (dir, g) = fixture();
+        let plan = Plan { items: vec![item(dir.path().join("Library/Caches/app"))], ..Default::default() };
+        // The log's parent is a file, so it cannot be created.
+        let blocker = dir.path().join("blocker");
+        fs::write(&blocker, "x").unwrap();
+        let r = execute(&plan, &g, Mode::Permanent, Some(&blocker.join("actions.log")));
+        assert_eq!(r.removed.len(), 1);
+        assert!(r.log_error.is_some());
     }
 
     #[test]

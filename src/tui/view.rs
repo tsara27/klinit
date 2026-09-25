@@ -229,7 +229,7 @@ fn checklist_line(list: &Checklist, i: usize, w: usize, max: u64, theme: Theme) 
     let mut spans = vec![mark, size];
     if w >= 56 {
         spans.extend(bar(8, frac(item.size, max), theme));
-        spans.push(Span::styled(format!(" {} ", fit(&item.category, 9)), muted()));
+        spans.push(Span::styled(format!(" {} ", fit(item.category.as_str(), 9)), muted()));
         spans.push(Span::raw(tail(&path, w.saturating_sub(33))));
     } else {
         spans.push(Span::raw(tail(&path, w.saturating_sub(14))));
@@ -339,7 +339,7 @@ fn draw_dashboard(f: &mut Frame, area: Rect, cleanup: &Load<Reclaim>, disk: Opti
     let max = r.rows.iter().map(|c| c.size).max().unwrap_or(1);
     let bar_w = (inner.width as usize).saturating_sub(11 + 10 + 7);
     for (n, c) in r.rows.iter().enumerate().take(inner.height as usize) {
-        let mut spans = vec![Span::raw(format!("{} ", fit(c.id, 10)))];
+        let mut spans = vec![Span::raw(format!("{} ", fit(c.id.as_str(), 10)))];
         spans.extend(bar(bar_w, frac(c.size, max), theme));
         spans.push(Span::raw(format!(" {:>9}", format_size(c.size))));
         spans.push(Span::styled(format!(" {:>4}", c.count), muted()));
@@ -465,7 +465,7 @@ fn draw_dialog(f: &mut Frame, dialog: &Dialog, theme: Theme, tick: usize, hits: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::plan::{Item, Plan};
+    use crate::core::plan::{Category, Item, Plan};
     use crate::modules::apps::App as AppInfo;
     use crate::tui::app::{Msg, ScanKind, ScanResult};
     use ratatui::Terminal;
@@ -475,7 +475,7 @@ mod tests {
     fn plan(n: usize) -> Plan {
         Plan {
             items: (0..n)
-                .map(|i| Item { path: format!("/Users/x/Library/Caches/some.long.bundle.id.{i}").into(), size: 1000 * (i as u64 + 1), category: "caches".into(), reason: "r".into() })
+                .map(|i| Item { path: format!("/Users/x/Library/Caches/some.long.bundle.id.{i}").into(), size: 1000 * (i as u64 + 1), category: Category::Caches, reason: "r".into() })
                 .collect(),
             warnings: vec!["needs Full Disk Access".into()],
         }
@@ -483,7 +483,7 @@ mod tests {
 
     fn loaded() -> App {
         let mut app = App::new(Theme { truecolor: true });
-        app.update(Msg::Scanned(ScanResult::Cleanup(vec![("caches", "caches", plan(30)), ("trash", "trash", plan(2))])));
+        app.update(Msg::Scanned(ScanResult::Cleanup(vec![(Category::Caches, "caches", plan(30)), (Category::Trash, "trash", plan(2))])));
         app.update(Msg::Scanned(ScanResult::Apps(vec![AppInfo {
             path: "/Applications/Foo.app".into(),
             name: "Foo".into(),

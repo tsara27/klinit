@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use crate::core::plan::{Item, Plan};
-use crate::core::scanner::dir_size;
+use crate::core::plan::{Category, Item, Plan};
+use crate::core::scanner::path_size;
 
 const LOCATIONS: &[(&str, &str)] = &[
     ("Library/Application Support", ""),
@@ -40,12 +40,9 @@ pub fn scan(home: &Path, installed: &HashSet<String>) -> Plan {
                 continue;
             }
             let path = e.path();
-            let size = match path.symlink_metadata() {
-                Ok(m) if m.is_dir() => dir_size(&path),
-                Ok(m) => m.len(),
-                Err(_) => continue,
-            };
-            plan.items.push(Item { path, size, category: "leftovers".into(), reason: format!("no installed app has bundle ID {id}") });
+            let Some(size) = path_size(&path) else { continue };
+            let reason = format!("no installed app has bundle ID {id}");
+            plan.items.push(Item { path, size, category: Category::Orphaned, reason });
         }
     }
     plan.items.sort_by_key(|i| std::cmp::Reverse(i.size));

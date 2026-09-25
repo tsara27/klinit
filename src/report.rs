@@ -1,14 +1,14 @@
 use crate::core::executor::{Mode, Report};
-use crate::core::plan::Plan;
+use crate::core::plan::{Category, Plan};
 use crate::core::scanner::format_size;
 use crate::modules::apps::App;
 use crate::modules::large::{DupeGroup, FileInfo};
 
-pub fn print_scan(rows: &[(&str, &str, Plan)], json: bool) -> anyhow::Result<()> {
+pub fn print_scan(rows: &[(Category, &str, Plan)], json: bool) -> anyhow::Result<()> {
     if json {
         let out: Vec<_> = rows
             .iter()
-            .map(|(id, desc, p)| serde_json::json!({"category": id, "description": desc, "items": p.items.len(), "size": p.total_size(), "warnings": p.warnings}))
+            .map(|(id, desc, p)| serde_json::json!({"category": id.as_str(), "description": desc, "items": p.items.len(), "size": p.total_size(), "warnings": p.warnings}))
             .collect();
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
@@ -17,7 +17,7 @@ pub fn print_scan(rows: &[(&str, &str, Plan)], json: bool) -> anyhow::Result<()>
     for (id, desc, p) in rows {
         println!("{:<10} {:>6} {:>10}  {}", id, p.items.len(), format_size(p.total_size()), desc);
     }
-    let total: u64 = rows.iter().filter(|(id, ..)| *id != "trash").map(|(.., p)| p.total_size()).sum();
+    let total: u64 = rows.iter().filter(|(id, ..)| !id.is_trash()).map(|(.., p)| p.total_size()).sum();
     println!("{:<10} {:>6} {:>10}  (excluding trash)", "total", "", format_size(total));
     for w in rows.iter().flat_map(|(.., p)| &p.warnings) {
         eprintln!("warning: {w}");
@@ -51,6 +51,9 @@ pub fn print_clean(plan: &Plan, report: &Report, mode: Mode, json: bool) -> anyh
     }
     for w in &plan.warnings {
         eprintln!("warning: {w}");
+    }
+    if let Some(e) = &report.log_error {
+        eprintln!("warning: could not write the action log: {e}");
     }
     let n = report.removed.len();
     let size = format_size(report.freed());

@@ -6,7 +6,7 @@ use std::thread;
 use super::Ctx;
 use super::app::{Effect, Msg, ScanKind, ScanResult};
 use crate::core::executor;
-use crate::core::plan::{Item, Plan};
+use crate::core::plan::{Category, Item, Plan};
 use crate::modules::{self, apps, large, leftovers};
 use crate::platform;
 
@@ -52,7 +52,7 @@ fn scan(kind: ScanKind, ctx: &Ctx) -> Vec<Msg> {
                 .map(|f| Item {
                     path: f.path,
                     size: f.size,
-                    category: "large".into(),
+                    category: Category::Large,
                     reason: format!("{} days since modified", f.age_days),
                 })
                 .collect();

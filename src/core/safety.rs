@@ -2,10 +2,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-/// Top-level directories under `$HOME` that are never touched, nor is anything inside them.
+/// Directories under `$HOME` that are never touched, nor is anything inside them:
+/// personal files, credentials, and app data that cannot be regenerated.
 const PROTECTED_HOME_DIRS: &[&str] = &[
-    "Documents", "Desktop", "Pictures", "Movies", "Music", "Downloads", ".ssh", ".gnupg",
-    "Library/Keychains",
+    "Documents", "Desktop", "Pictures", "Movies", "Music", "Downloads",
+    ".ssh", ".gnupg", ".aws", ".kube", ".config/gcloud", ".docker",
+    "Library/Keychains", "Library/Mobile Documents", "Library/Messages", "Library/Mail",
+    "Library/Photos", "Library/Safari", "Library/Application Support/MobileSync",
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -120,6 +123,16 @@ mod tests {
         let (dir, g) = setup();
         assert!(matches!(g.check(&dir.path().join("Documents")), Err(Violation::Protected(_))));
         assert!(matches!(g.check(&dir.path().join(".ssh")), Err(Violation::Protected(_))));
+    }
+
+    #[test]
+    fn rejects_credentials_and_irreplaceable_data() {
+        let (dir, g) = setup();
+        for d in [".aws", "Library/Mobile Documents/x", "Library/Application Support/MobileSync/Backup"] {
+            assert!(matches!(g.check(&dir.path().join(d)), Err(Violation::Missing)), "{d}");
+            fs::create_dir_all(dir.path().join(d)).unwrap();
+            assert!(matches!(g.check(&dir.path().join(d)), Err(Violation::Protected(_))), "{d}");
+        }
     }
 
     #[test]

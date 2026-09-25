@@ -9,12 +9,11 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use rayon::prelude::*;
 
-use crate::core::plan::{Item, Plan};
-use crate::core::scanner::dir_size;
+use crate::core::plan::{Category, Item, Plan};
 use targets::{CATEGORIES, Mode, TARGETS, Target};
 
 pub trait Module: Sync {
-    fn id(&self) -> &'static str;
+    fn category(&self) -> Category;
     fn description(&self) -> &'static str;
     /// Read-only: builds a plan without touching the disk.
     fn scan(&self, home: &Path) -> Plan;
@@ -22,13 +21,13 @@ pub trait Module: Sync {
 
 /// A category backed entirely by rows of the target table.
 struct TableModule {
-    id: &'static str,
+    category: Category,
     description: &'static str,
 }
 
 impl Module for TableModule {
-    fn id(&self) -> &'static str {
-        self.id
+    fn category(&self) -> Category {
+        self.category
     }
 
     fn description(&self) -> &'static str {
@@ -37,7 +36,7 @@ impl Module for TableModule {
 
     fn scan(&self, home: &Path) -> Plan {
         let mut plan = Plan::default();
-        for target in TARGETS.iter().filter(|t| t.category == self.id) {
+        for target in TARGETS.iter().filter(|t| t.category == self.category) {
             scan_target(home, target, &mut plan);
         }
         plan
@@ -72,48 +71,39 @@ fn scan_target(home: &Path, target: &Target, plan: &mut Plan) {
     };
     let items: Vec<Item> = paths
         .into_par_iter()
-        .map(|path| {
-            let size = match path.symlink_metadata() {
-                Ok(m) if m.is_dir() => dir_size(&path),
-                Ok(m) => m.len(),
-                Err(_) => 0,
-            };
-            Item { path, size, category: target.category.into(), reason: target.reason.into() }
-        })
+        .map(|path| Item::from_path(path, target.category, target.reason))
         .collect();
     plan.items.extend(items);
 }
 
 pub fn all() -> Vec<Box<dyn Module>> {
-    CATEGORIES.iter().map(|&(id, description)| Box::new(TableModule { id, description }) as Box<dyn Module>).collect()
+    CATEGORIES.iter().map(|&(category, description)| Box::new(TableModule { category, description }) as Box<dyn Module>).collect()
 }
 
 /// Scans every module in parallel, in registry order.
-pub fn scan_all(home: &Path) -> Vec<(&'static str, &'static str, Plan)> {
-    all().par_iter().map(|m| (m.id(), m.description(), m.scan(home))).collect()
+pub fn scan_all(home: &Path) -> Vec<(Category, &'static str, Plan)> {
+    all().par_iter().map(|m| (m.category(), m.description(), m.scan(home))).collect()
 }
 
 /// Resolves category names (`all` = everything except trash) and merges their plans.
 pub fn build_plan(home: &Path, names: &[String]) -> Result<Plan> {
     let modules = all();
-    let valid: Vec<&str> = modules.iter().map(|m| m.id()).collect();
+    let valid: Vec<&str> = modules.iter().map(|m| m.category().as_str()).collect();
     if names.is_empty() {
         bail!("no category given; choose from: {}, or `all`", valid.join(", "));
     }
-    let mut selected: Vec<&str> = Vec::new();
+    let mut selected: Vec<Category> = Vec::new();
     for name in names {
         if name == "all" {
-            selected.extend(valid.iter().filter(|id| **id != "trash"));
-        } else if let Some(id) = valid.iter().find(|id| **id == name) {
-            selected.push(id);
+            selected.extend(modules.iter().map(|m| m.category()).filter(|c| !c.is_trash()));
+        } else if let Some(m) = modules.iter().find(|m| m.category().as_str() == name) {
+            selected.push(m.category());
         } else {
             bail!("unknown category `{name}`; valid categories: {}, all", valid.join(", "));
         }
     }
-    selected.sort_unstable();
-    selected.dedup();
     let mut merged = Plan::default();
-    for m in modules.iter().filter(|m| selected.contains(&m.id())) {
+    for m in modules.iter().filter(|m| selected.contains(&m.category())) {
         let plan = m.scan(home);
         merged.items.extend(plan.items);
         merged.warnings.extend(plan.warnings);
@@ -164,7 +154,7 @@ mod tests {
     fn absent_paths_yield_empty_plan() {
         let d = tempfile::tempdir().unwrap();
         for m in all() {
-            assert!(m.scan(d.path()).items.is_empty(), "{}", m.id());
+            assert!(m.scan(d.path()).items.is_empty(), "{}", m.category());
         }
     }
 
@@ -183,7 +173,7 @@ mod tests {
     fn all_excludes_trash() {
         let d = fixture();
         let plan = build_plan(d.path(), &names(&["all"])).unwrap();
-        assert!(plan.items.iter().all(|i| i.category != "trash"));
+        assert!(plan.items.iter().all(|i| !i.category.is_trash()));
         assert!(!plan.items.is_empty());
     }
 

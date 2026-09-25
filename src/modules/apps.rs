@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 use rayon::prelude::*;
 
-use crate::core::plan::{Item, Plan};
+use crate::core::plan::{Category, Item, Plan};
 use crate::core::scanner::dir_size;
 
 /// Per-app locations under `~`, matched by exact bundle ID: (directory, file-name suffix).
@@ -104,28 +104,19 @@ pub struct UninstallPlan {
     pub fuzzy: Vec<Item>,
 }
 
-fn item(path: PathBuf, category: &str, reason: String) -> Item {
-    let size = match path.symlink_metadata() {
-        Ok(m) if m.is_dir() => dir_size(&path),
-        Ok(m) => m.len(),
-        Err(_) => 0,
-    };
-    Item { path, size, category: category.into(), reason }
-}
-
 /// Read-only. Refuses `com.apple.*` apps.
 pub fn uninstall_plan(app: &App, home: &Path) -> Result<UninstallPlan> {
     if app.is_apple() {
         bail!("{} is a system app (com.apple.*) and is never uninstalled", app.name);
     }
     let mut plan = Plan::default();
-    plan.items.push(item(app.path.clone(), "app", "application bundle".into()));
+    plan.items.push(Item::from_path(app.path.clone(), Category::App, "application bundle"));
 
     if let Some(id) = &app.bundle_id {
         for (dir, suffix) in LEFTOVER_LOCATIONS {
             let exact = home.join(dir).join(format!("{id}{suffix}"));
             if exact.symlink_metadata().is_ok() {
-                plan.items.push(item(exact, "leftover", format!("matches bundle ID {id}")));
+                plan.items.push(Item::from_path(exact, Category::Leftover, format!("matches bundle ID {id}")));
             }
         }
         // Group containers are named `group.<id>` or `<TeamID>.<id>`.
@@ -133,7 +124,7 @@ pub fn uninstall_plan(app: &App, home: &Path) -> Result<UninstallPlan> {
             for e in rd.filter_map(Result::ok) {
                 let n = e.file_name().to_string_lossy().into_owned();
                 if n == *id || n.ends_with(&format!(".{id}")) {
-                    plan.items.push(item(e.path(), "leftover", format!("group container of {id}")));
+                    plan.items.push(Item::from_path(e.path(), Category::Leftover, format!("group container of {id}")));
                 }
             }
         }
@@ -146,7 +137,7 @@ pub fn uninstall_plan(app: &App, home: &Path) -> Result<UninstallPlan> {
         for name in [app.name.as_str(), &app.stem()] {
             let p = home.join(dir).join(name);
             if p.symlink_metadata().is_ok() && !fuzzy.iter().any(|i: &Item| i.path == p) {
-                fuzzy.push(item(p, "fuzzy", format!("folder named after {}", app.name)));
+                fuzzy.push(Item::from_path(p, Category::Fuzzy, format!("folder named after {}", app.name)));
             }
         }
     }

@@ -16,6 +16,12 @@ pub fn dir_size(path: &Path) -> u64 {
         .sum()
 }
 
+/// Size of a file or, recursively, a directory. Symlinks are not followed. `None` if unreadable.
+pub fn path_size(path: &Path) -> Option<u64> {
+    let m = path.symlink_metadata().ok()?;
+    Some(if m.is_dir() { dir_size(path) } else { m.len() })
+}
+
 /// Sizes of the immediate children of `path`, largest first, computed in parallel.
 pub fn child_sizes(path: &Path) -> std::io::Result<Vec<(std::path::PathBuf, u64)>> {
     let entries: Vec<_> = std::fs::read_dir(path)?.filter_map(Result::ok).map(|e| e.path()).collect();

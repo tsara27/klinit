@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use serde::Serialize;
 use walkdir::WalkDir;
 
-use crate::core::plan::{Item, Plan};
+use crate::core::plan::{Category, Item, Plan};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FileInfo {
@@ -133,7 +133,7 @@ pub fn extras_plan(groups: &[DupeGroup]) -> Plan {
             plan.items.push(Item {
                 path: f.path.clone(),
                 size: f.size,
-                category: "dupes".into(),
+                category: Category::Dupes,
                 reason: format!("duplicate of {}", g.files[0].path.display()),
             });
         }

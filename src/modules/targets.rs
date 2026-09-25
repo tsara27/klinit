@@ -1,5 +1,7 @@
 //! Cleanup locations as data: macOS paths shift between versions, so they live in one table.
 
+use crate::core::plan::Category;
+
 #[derive(Clone, Copy)]
 pub enum Mode {
     /// Each child of the directory is an item; the directory itself is kept.
@@ -9,7 +11,7 @@ pub enum Mode {
 }
 
 pub struct Target {
-    pub category: &'static str,
+    pub category: Category,
     pub rel_path: &'static str,
     pub mode: Mode,
     /// Child names (Contents mode) claimed by another category, so nothing is counted twice.
@@ -17,39 +19,39 @@ pub struct Target {
     pub reason: &'static str,
 }
 
-const fn t(category: &'static str, rel_path: &'static str, mode: Mode, reason: &'static str) -> Target {
+const fn t(category: Category, rel_path: &'static str, mode: Mode, reason: &'static str) -> Target {
     Target { category, rel_path, mode, skip: &[], reason }
 }
 
-pub const CATEGORIES: &[(&str, &str)] = &[
-    ("caches", "Application caches in ~/Library/Caches"),
-    ("logs", "Application and crash logs"),
-    ("trash", "Files in the Trash (not recoverable)"),
-    ("xcode", "Xcode derived data and simulator caches"),
-    ("browsers", "Safari, Chrome and Firefox caches (never profiles or history)"),
-    ("dev", "Package manager and build tool caches"),
+pub const CATEGORIES: &[(Category, &str)] = &[
+    (Category::Caches, "Application caches in ~/Library/Caches"),
+    (Category::Logs, "Application and crash logs"),
+    (Category::Trash, "Files in the Trash (not recoverable)"),
+    (Category::Xcode, "Xcode derived data and simulator caches"),
+    (Category::Browsers, "Safari, Chrome and Firefox caches (never profiles or history)"),
+    (Category::Dev, "Package manager and build tool caches"),
 ];
 
 pub const TARGETS: &[Target] = &[
     Target {
-        category: "caches",
+        category: Category::Caches,
         rel_path: "Library/Caches",
         mode: Mode::Contents,
         skip: &["com.apple.Safari", "Google", "Firefox", "Yarn", "Homebrew"],
         reason: "application cache",
     },
-    t("logs", "Library/Logs", Mode::Contents, "application log"),
-    t("logs", "Library/Application Support/CrashReporter", Mode::Contents, "crash report"),
-    t("trash", ".Trash", Mode::Contents, "in Trash"),
-    t("xcode", "Library/Developer/Xcode/DerivedData", Mode::Contents, "Xcode derived data"),
-    t("xcode", "Library/Developer/Xcode/iOS DeviceSupport", Mode::Contents, "iOS device support files"),
-    t("xcode", "Library/Developer/CoreSimulator/Caches", Mode::Contents, "simulator cache"),
-    t("browsers", "Library/Caches/com.apple.Safari", Mode::Whole, "Safari cache"),
-    t("browsers", "Library/Caches/Google/Chrome", Mode::Whole, "Chrome cache"),
-    t("browsers", "Library/Caches/Firefox", Mode::Whole, "Firefox cache"),
-    t("dev", ".npm/_cacache", Mode::Whole, "npm cache"),
-    t("dev", "Library/Caches/Yarn", Mode::Whole, "Yarn cache"),
-    t("dev", ".cargo/registry/cache", Mode::Whole, "Cargo registry cache"),
-    t("dev", "Library/Caches/Homebrew", Mode::Whole, "Homebrew download cache"),
-    t("dev", ".gradle/caches", Mode::Whole, "Gradle cache"),
+    t(Category::Logs, "Library/Logs", Mode::Contents, "application log"),
+    t(Category::Logs, "Library/Application Support/CrashReporter", Mode::Contents, "crash report"),
+    t(Category::Trash, ".Trash", Mode::Contents, "in Trash"),
+    t(Category::Xcode, "Library/Developer/Xcode/DerivedData", Mode::Contents, "Xcode derived data"),
+    t(Category::Xcode, "Library/Developer/Xcode/iOS DeviceSupport", Mode::Contents, "iOS device support files"),
+    t(Category::Xcode, "Library/Developer/CoreSimulator/Caches", Mode::Contents, "simulator cache"),
+    t(Category::Browsers, "Library/Caches/com.apple.Safari", Mode::Whole, "Safari cache"),
+    t(Category::Browsers, "Library/Caches/Google/Chrome", Mode::Whole, "Chrome cache"),
+    t(Category::Browsers, "Library/Caches/Firefox", Mode::Whole, "Firefox cache"),
+    t(Category::Dev, ".npm/_cacache", Mode::Whole, "npm cache"),
+    t(Category::Dev, "Library/Caches/Yarn", Mode::Whole, "Yarn cache"),
+    t(Category::Dev, ".cargo/registry/cache", Mode::Whole, "Cargo registry cache"),
+    t(Category::Dev, "Library/Caches/Homebrew", Mode::Whole, "Homebrew download cache"),
+    t(Category::Dev, ".gradle/caches", Mode::Whole, "Gradle cache"),
 ];

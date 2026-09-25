@@ -6,7 +6,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, Mo
 use super::hit::HitMap;
 use super::theme::Theme;
 use crate::core::executor::{Mode, Report};
-use crate::core::plan::{Item, Plan};
+use crate::core::plan::{Category, Item, Plan};
 use crate::core::scanner::format_size;
 use crate::modules::apps::App as AppInfo;
 
@@ -92,13 +92,13 @@ pub enum Effect {
 }
 
 pub struct CatRow {
-    pub id: &'static str,
+    pub id: Category,
     pub size: u64,
     pub count: usize,
 }
 
 pub enum ScanResult {
-    Cleanup(Vec<(&'static str, &'static str, Plan)>),
+    Cleanup(Vec<(Category, &'static str, Plan)>),
     Apps(Vec<AppInfo>),
     List(ScanKind, Plan),
 }
@@ -557,7 +557,7 @@ impl App {
                 for (id, _, plan) in rows {
                     summary.push(CatRow { id, size: plan.total_size(), count: plan.items.len() });
                     warnings.extend(plan.warnings);
-                    if id != "trash" {
+                    if !id.is_trash() {
                         items.extend(plan.items);
                     }
                 }
@@ -595,7 +595,7 @@ mod tests {
     use ratatui::crossterm::event::KeyEventKind;
 
     fn item(name: &str, size: u64) -> Item {
-        Item { path: format!("/tmp/{name}").into(), size, category: "x".into(), reason: "r".into() }
+        Item { path: format!("/tmp/{name}").into(), size, category: Category::Caches, reason: "r".into() }
     }
 
     fn key(c: KeyCode) -> Msg {
