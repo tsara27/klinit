@@ -1,7 +1,9 @@
+mod config;
 mod core;
 mod modules;
 mod platform;
 mod report;
+mod tui;
 
 use std::path::PathBuf;
 
@@ -38,7 +40,11 @@ enum Command {
     },
     /// Clean categories (dry run unless --yes): caches, logs, trash, xcode, browsers, dev, all
     Clean {
+        /// Categories to clean; falls back to `default_categories` from the config file
         categories: Vec<String>,
+        /// Pick items from a checklist before acting
+        #[arg(short, long)]
+        interactive: bool,
         /// Actually delete (moves to Trash)
         #[arg(long)]
         yes: bool,
@@ -67,6 +73,9 @@ enum Command {
         /// Build a removal plan (still a dry run unless --yes)
         #[arg(long)]
         remove: bool,
+        /// Pick items from a checklist (implies --remove)
+        #[arg(short, long)]
+        interactive: bool,
         #[arg(long)]
         yes: bool,
         #[arg(long)]
@@ -96,6 +105,9 @@ enum Command {
         min_kb: u64,
         #[arg(long)]
         remove_extras: bool,
+        /// Pick items from a checklist (implies --remove-extras)
+        #[arg(short, long)]
+        interactive: bool,
         #[arg(long)]
         yes: bool,
         #[arg(long)]
@@ -103,6 +115,10 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Show the config file path and effective settings
+    Config,
+    /// Print a shell completion script
+    Completions { shell: clap_complete::Shell },
     /// List installed apps with size
     Apps {
         #[arg(long)]
@@ -123,7 +139,40 @@ fn app_dirs(home: &std::path::Path) -> Vec<PathBuf> {
     vec![PathBuf::from("/Applications"), home.join("Applications")]
 }
 
+/// How a plan is confirmed: everything, or picked from a checklist.
+#[derive(Clone, Copy)]
+enum Pick {
+    All,
+    /// Checklist; the flag says whether items start ticked.
+    Interactive(bool),
+}
+
+fn guard_for(home: &std::path::Path) -> Result<Guard> {
+    Ok(Guard::new(home)?.protect(config::load(home)?.exclude_paths(home)))
+}
+
+fn spinner(msg: &'static str, json: bool) -> indicatif::ProgressBar {
+    if json || !std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+        return indicatif::ProgressBar::hidden();
+    }
+    let pb = indicatif::ProgressBar::new_spinner().with_message(msg);
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    pb
+}
+
 fn run_plan(plan: &core::plan::Plan, guard: Guard, yes: bool, permanent: bool, json: bool) -> Result<()> {
+    run_plan_with(plan, guard, yes, permanent, json, Pick::All)
+}
+
+fn run_plan_with(plan: &core::plan::Plan, guard: Guard, yes: bool, permanent: bool, json: bool, pick: Pick) -> Result<()> {
+    let chosen;
+    let plan = match pick {
+        Pick::All => plan,
+        Pick::Interactive(pre) => {
+            chosen = core::plan::Plan { items: tui::select(plan.items.clone(), pre)?, warnings: plan.warnings.clone() };
+            &chosen
+        }
+    };
     let mode = match (yes, permanent) {
         (false, _) => Mode::DryRun,
         (true, false) => Mode::Trash,
@@ -153,22 +202,42 @@ fn main() -> Result<()> {
                 println!("{:>10}  total", format_size(sizes.iter().map(|(_, s)| s).sum()));
             }
         }
-        Command::Scan { json } => report::print_scan(&modules::scan_all(&home_dir()?), json)?,
-        Command::Clean { categories, yes, permanent, json } => {
+        Command::Scan { json } => {
+            let pb = spinner("scanning...", json);
+            let rows = modules::scan_all(&home_dir()?);
+            pb.finish_and_clear();
+            report::print_scan(&rows, json)?
+        }
+        Command::Clean { categories, interactive, yes, permanent, json } => {
             let home = home_dir()?;
+            let categories = if categories.is_empty() { config::load(&home)?.default_categories } else { categories };
+            let pb = spinner("scanning...", json);
             let plan = modules::build_plan(&home, &categories)?;
-            run_plan(&plan, Guard::new(&home)?, yes, permanent, json)?;
+            pb.finish_and_clear();
+            let pick = if interactive { Pick::Interactive(true) } else { Pick::All };
+            run_plan_with(&plan, guard_for(&home)?, yes, permanent, json, pick)?;
+        }
+        Command::Config => {
+            let home = home_dir()?;
+            println!("# {}", config::path(&home).display());
+            print!("{}", toml::to_string_pretty(&config::load(&home)?)?);
+        }
+        Command::Completions { shell } => {
+            clap_complete::generate(shell, &mut <Cli as clap::CommandFactory>::command(), "klinit", &mut std::io::stdout());
         }
         Command::Apps { json } => {
             let apps = apps::discover(&app_dirs(&home_dir()?));
             report::print_apps(&apps, json)?;
         }
-        Command::Leftovers { remove, yes, permanent, json } => {
+        Command::Leftovers { remove, interactive, yes, permanent, json } => {
             let home = home_dir()?;
+            let pb = spinner("scanning...", json);
             let ids = apps::discover(&app_dirs(&home)).into_iter().filter_map(|a| a.bundle_id).collect();
             let plan = modules::leftovers::scan(&home, &ids);
-            if remove {
-                run_plan(&plan, Guard::new(&home)?, yes, permanent, json)?;
+            pb.finish_and_clear();
+            if remove || interactive {
+                let pick = if interactive { Pick::Interactive(false) } else { Pick::All };
+                run_plan_with(&plan, guard_for(&home)?, yes, permanent, json, pick)?;
             } else {
                 report::print_plan(&plan, json)?;
                 if !json {
@@ -178,16 +247,21 @@ fn main() -> Result<()> {
         }
         Command::Large { path, min_mb, older_than, top, json } => {
             let root = match path { Some(p) => p, None => home_dir()? };
+            let pb = spinner("scanning...", json);
             let files = modules::large::find_large(&root, min_mb * 1_000_000, older_than);
+            pb.finish_and_clear();
             report::print_files(&files[..files.len().min(top)], json)?;
         }
-        Command::Dupes { path, min_kb, remove_extras, yes, permanent, json } => {
+        Command::Dupes { path, min_kb, remove_extras, interactive, yes, permanent, json } => {
             let home = home_dir()?;
             let root = path.unwrap_or_else(|| home.clone());
+            let pb = spinner("hashing candidates...", json);
             let groups = modules::large::find_dupes(&root, min_kb * 1000);
-            if remove_extras {
+            pb.finish_and_clear();
+            if remove_extras || interactive {
                 let plan = modules::large::extras_plan(&groups);
-                run_plan(&plan, Guard::new(&home)?, yes, permanent, json)?;
+                let pick = if interactive { Pick::Interactive(false) } else { Pick::All };
+                run_plan_with(&plan, guard_for(&home)?, yes, permanent, json, pick)?;
             } else {
                 report::print_dupes(&groups, json)?;
             }
@@ -209,7 +283,7 @@ fn main() -> Result<()> {
                     plan.warnings.push(format!("not removed (name match only): {}; use --include-fuzzy", f.path.display()));
                 }
             }
-            let mut guard = Guard::new(&home)?;
+            let mut guard = guard_for(&home)?;
             for d in &dirs {
                 guard = guard.allow_app_dir(d);
             }

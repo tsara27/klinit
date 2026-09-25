@@ -55,7 +55,7 @@ src/
 - [x] **M2: `scan` and `clean`.** Detailed below.
 - [x] **M3: `uninstall` and `apps`.** Info.plist bundle IDs, leftover discovery, running-app check.
 - [x] **M4: `leftovers`, `large`, `dupes`.** Lower-confidence features, never auto-selected.
-- [ ] **M5: polish.** Interactive checklist TUI (ratatui), config file, progress bars, shell completions.
+- [x] **M5: polish.** Interactive checklist TUI (ratatui), config file, progress bars, shell completions.
 - [ ] **M6: release.** Homebrew tap, GitHub Actions universal binary, notarization.
 
 ## M2: `scan` and `clean`

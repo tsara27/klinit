@@ -53,6 +53,13 @@ impl Guard {
         self
     }
 
+    /// Adds user-configured paths that must never be deleted (or anything inside them).
+    pub fn protect(mut self, paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        // Canonicalize so symlinked spellings match; a missing path is kept as written.
+        self.protected.extend(paths.into_iter().map(|p| p.canonicalize().unwrap_or(p)));
+        self
+    }
+
     pub fn home(&self) -> &Path {
         &self.home
     }
@@ -132,6 +139,14 @@ mod tests {
         assert!(g.check(&apps.path().join("Foo.app")).is_ok());
         assert_eq!(g.check(&apps.path().join("Foo.app/Contents")), Err(Violation::OutsideHome));
         assert_eq!(g.check(&apps.path().join("Other")), Err(Violation::OutsideHome));
+    }
+
+    #[test]
+    fn configured_exclusions_are_protected() {
+        let (dir, _) = setup();
+        fs::create_dir_all(dir.path().join("Projects/x")).unwrap();
+        let g = Guard::new(dir.path()).unwrap().protect([dir.path().join("Projects")]);
+        assert!(matches!(g.check(&dir.path().join("Projects/x")), Err(Violation::Protected(_))));
     }
 
     #[test]
