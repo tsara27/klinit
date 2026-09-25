@@ -1,3 +1,4 @@
+pub mod apps;
 pub mod targets;
 
 use std::fs;

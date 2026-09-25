@@ -53,7 +53,7 @@ src/
 - [x] **M0: skeleton.** Cargo project, clap, parallel scanner, `klinit disk`.
 - [x] **M1: safety and executor.** `Guard`, `Plan`, `execute` (dry-run/Trash/permanent), action log, unit tests.
 - [x] **M2: `scan` and `clean`.** Detailed below.
-- [ ] **M3: `uninstall` and `apps`.** Info.plist bundle IDs, leftover discovery, running-app check.
+- [x] **M3: `uninstall` and `apps`.** Info.plist bundle IDs, leftover discovery, running-app check.
 - [ ] **M4: `leftovers`, `large`, `dupes`.** Lower-confidence features, never auto-selected.
 - [ ] **M5: polish.** Interactive checklist TUI (ratatui), config file, progress bars, shell completions.
 - [ ] **M6: release.** Homebrew tap, GitHub Actions universal binary, notarization.
@@ -116,6 +116,14 @@ Out of scope for M2: `brew cleanup` and `docker system prune` (need to shell out
 - `klinit scan` prints a per-category table and `--json` output.
 - `klinit clean caches logs` is a dry-run by default and only deletes with `--yes`.
 - All new tests pass and the M2 code produces no dead-code warnings.
+
+## M3: `uninstall` and `apps` (done)
+
+- `modules/apps.rs`: discovers `*.app` in `/Applications` and `~/Applications`, reads `Info.plist` (bundle ID, name, version) with the `plist` crate.
+- `uninstall` matches by bundle ID, display name or file name. It refuses `com.apple.*` apps and running apps (`platform::running_executables`, path-prefix match).
+- Leftovers are matched by exact bundle ID in a table (`LEFTOVER_LOCATIONS`) plus Group Containers. Name-only matches are "fuzzy": reported as warnings, removed only with `--include-fuzzy`.
+- `Guard::allow_app_dir` permits deleting `*.app` bundles directly inside the app directories, the only exception to the outside-`$HOME` rule.
+- Not covered: nested apps (e.g. `/Applications/Utilities`), ByHost preferences, login items, apps whose bundle is not user-writable (reported as skipped by the executor).
 
 ## Open questions
 

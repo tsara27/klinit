@@ -1,6 +1,7 @@
 use crate::core::executor::{Mode, Report};
 use crate::core::plan::Plan;
 use crate::core::scanner::format_size;
+use crate::modules::apps::App;
 
 pub fn print_scan(rows: &[(&str, &str, Plan)], json: bool) -> anyhow::Result<()> {
     if json {
@@ -57,5 +58,22 @@ pub fn print_clean(plan: &Plan, report: &Report, mode: Mode, json: bool) -> anyh
         Mode::Trash => println!("Moved {n} items ({size}) to the Trash."),
         Mode::Permanent => println!("Permanently deleted {n} items ({size})."),
     }
+    Ok(())
+}
+
+pub fn print_apps(apps: &[App], json: bool) -> anyhow::Result<()> {
+    if json {
+        let out: Vec<_> = apps
+            .iter()
+            .map(|a| serde_json::json!({"name": a.name, "bundle_id": a.bundle_id, "version": a.version, "size": a.size, "path": a.path}))
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+    println!("{:>10}  {:<32} {}", "SIZE", "NAME", "BUNDLE ID");
+    for a in apps {
+        println!("{:>10}  {:<32} {}", format_size(a.size), a.name, a.bundle_id.as_deref().unwrap_or("-"));
+    }
+    println!("{:>10}  {} apps", format_size(apps.iter().map(|a| a.size).sum()), apps.len());
     Ok(())
 }

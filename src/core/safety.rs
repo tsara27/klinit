@@ -31,6 +31,8 @@ impl std::fmt::Display for Violation {
 pub struct Guard {
     home: PathBuf,
     protected: Vec<PathBuf>,
+    /// Directories (e.g. /Applications) whose direct `*.app` children may be deleted despite being outside home.
+    app_dirs: Vec<PathBuf>,
 }
 
 impl Guard {
@@ -40,7 +42,15 @@ impl Guard {
         anyhow::ensure!(home.parent().is_some(), "refusing to use / as the home directory");
         // System locations (/System, /usr, ...) need no entry: anything outside home is rejected.
         let protected = PROTECTED_HOME_DIRS.iter().map(|d| home.join(d)).collect();
-        Ok(Self { home, protected })
+        Ok(Self { home, protected, app_dirs: Vec::new() })
+    }
+
+    /// Allows deleting `*.app` bundles that sit directly inside `dir`. Nothing else there is allowed.
+    pub fn allow_app_dir(mut self, dir: &Path) -> Self {
+        if let Ok(d) = dir.canonicalize() {
+            self.app_dirs.push(d);
+        }
+        self
     }
 
     pub fn home(&self) -> &Path {
@@ -54,6 +64,11 @@ impl Guard {
         let real = path.canonicalize().map_err(|_| Violation::Missing)?;
         if real == self.home {
             return Err(Violation::IsHome);
+        }
+        let is_app_bundle = real.extension().is_some_and(|e| e == "app")
+            && real.parent().is_some_and(|p| self.app_dirs.iter().any(|d| d == p));
+        if is_app_bundle {
+            return Ok(real);
         }
         if !real.starts_with(&self.home) {
             return Err(Violation::OutsideHome);
@@ -105,6 +120,18 @@ mod tests {
         let (_dir, g) = setup();
         assert_eq!(g.check(Path::new("/tmp")), Err(Violation::OutsideHome));
         assert_eq!(g.check(Path::new("/")), Err(Violation::OutsideHome));
+    }
+
+    #[test]
+    fn app_dir_allows_only_direct_app_bundles() {
+        let (dir, _) = setup();
+        let apps = tempfile::tempdir().unwrap();
+        fs::create_dir_all(apps.path().join("Foo.app/Contents")).unwrap();
+        fs::create_dir_all(apps.path().join("Other")).unwrap();
+        let g = Guard::new(dir.path()).unwrap().allow_app_dir(apps.path());
+        assert!(g.check(&apps.path().join("Foo.app")).is_ok());
+        assert_eq!(g.check(&apps.path().join("Foo.app/Contents")), Err(Violation::OutsideHome));
+        assert_eq!(g.check(&apps.path().join("Other")), Err(Violation::OutsideHome));
     }
 
     #[test]
