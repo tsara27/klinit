@@ -13,7 +13,7 @@ A CleanMyMac-style cleanup tool for the macOS command line, written in Rust.
 ### Homebrew
 
 ```sh
-brew install <owner>/tap/klinit
+brew install tsara27/tap/klinit
 ```
 
 ### From a release
