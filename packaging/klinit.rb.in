@@ -1,0 +1,18 @@
+# Template: the release workflow fills @OWNER@, @VERSION@ and @SHA256@ and pushes the result
+# to the homebrew-tap repository as Formula/klinit.rb.
+class Klinit < Formula
+  desc "Clean up your Mac from the command line"
+  homepage "https://github.com/@OWNER@/klinit"
+  url "https://github.com/@OWNER@/klinit/releases/download/v@VERSION@/klinit-@VERSION@-macos-universal.tar.gz"
+  sha256 "@SHA256@"
+  version "@VERSION@"
+
+  def install
+    bin.install "klinit"
+    generate_completions_from_executable(bin/"klinit", "completions")
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/klinit --version")
+  end
+end

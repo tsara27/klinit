@@ -56,7 +56,7 @@ src/
 - [x] **M3: `uninstall` and `apps`.** Info.plist bundle IDs, leftover discovery, running-app check.
 - [x] **M4: `leftovers`, `large`, `dupes`.** Lower-confidence features, never auto-selected.
 - [x] **M5: polish.** Interactive checklist TUI (ratatui), config file, progress bars, shell completions.
-- [ ] **M6: release.** Homebrew tap, GitHub Actions universal binary, notarization.
+- [x] **M6: release (pipeline written, not yet exercised).** Homebrew tap, GitHub Actions universal binary, notarization.
 
 ## M2: `scan` and `clean`
 
@@ -124,6 +124,25 @@ Out of scope for M2: `brew cleanup` and `docker system prune` (need to shell out
 - Leftovers are matched by exact bundle ID in a table (`LEFTOVER_LOCATIONS`) plus Group Containers. Name-only matches are "fuzzy": reported as warnings, removed only with `--include-fuzzy`.
 - `Guard::allow_app_dir` permits deleting `*.app` bundles directly inside the app directories, the only exception to the outside-`$HOME` rule.
 - Not covered: nested apps (e.g. `/Applications/Utilities`), ByHost preferences, login items, apps whose bundle is not user-writable (reported as skipped by the executor).
+
+## M4: `leftovers`, `large`, `dupes` (done)
+
+- All three are report-only. Removal is opt-in: `leftovers --remove`, `dupes --remove-extras` (keeps the oldest copy), both dry-run unless `--yes`. `large` never deletes.
+- `leftovers`: reverse-DNS names in Library folders with no installed app owning the ID (exact or `<id>.` prefix for helpers). `com.apple.*` skipped.
+- `large`/`dupes` skip `Library`, `.Trash` and app/photo-library packages. Dupes group by size, 4 KB prefix hash, then full blake3.
+
+## M5: polish (done)
+
+- `-i/--interactive` on `clean`, `leftovers`, `dupes` opens a ratatui checklist (`src/tui.rs`). `clean` starts ticked; the lower-confidence commands start unticked.
+- `~/.config/klinit/config.toml`: `exclude` (extra protected paths, enforced by `Guard::protect`) and `default_categories`. A malformed file is an error, never silently ignored. `klinit config` shows it.
+- Spinners on stderr (hidden with `--json` or when not a TTY). `klinit completions <shell>`.
+
+## M6: release (written, untested)
+
+- `.github/workflows/ci.yml`: test and clippy on push/PR.
+- `.github/workflows/release.yml`: on `v*` tags builds arm64 and x86_64, `lipo`s a universal binary, signs and notarizes if `APPLE_*` secrets exist, publishes a tarball and sha256 to a GitHub release, and updates `homebrew-tap` if `TAP_TOKEN` exists.
+- `packaging/klinit.rb.in`: formula template filled by the workflow.
+- Before the first tag: create the `homebrew-tap` repo, add the secrets (`APPLE_CERT_P12_BASE64`, `APPLE_CERT_PASSWORD`, `APPLE_SIGN_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`, `TAP_TOKEN`), and try a tag on a scratch branch or fork. A bare binary cannot be stapled, so Gatekeeper checks notarization online.
 
 ## Open questions
 

@@ -1,0 +1,83 @@
+name: Release
+# Push a tag like v0.1.0 to build a universal binary, sign and notarize it, and publish a release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+
+      - name: Build universal binary
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p dist
+          lipo -create -output dist/klinit \
+            target/aarch64-apple-darwin/release/klinit \
+            target/x86_64-apple-darwin/release/klinit
+          lipo -info dist/klinit
+
+      # Signing and notarization run only when the secrets exist, so forks and dry runs still build.
+      - name: Sign and notarize
+        env:
+          CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -z "$CERT_P12_BASE64" ]; then echo "no signing secrets; skipping"; exit 0; fi
+          echo "$CERT_P12_BASE64" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" dist/klinit
+          ditto -c -k dist/klinit dist/notarize.zip
+          xcrun notarytool submit dist/notarize.zip --wait \
+            --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD"
+          rm dist/notarize.zip cert.p12
+          # A bare Mach-O cannot be stapled; Gatekeeper checks the notarization ticket online.
+
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="klinit-${VERSION}-macos-universal.tar.gz"
+          tar -C dist -czf "$ARCHIVE" klinit
+          shasum -a 256 "$ARCHIVE" | tee "$ARCHIVE.sha256"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "$ARCHIVE" "$ARCHIVE.sha256" --generate-notes
+
+      # Needs a repo secret TAP_TOKEN (PAT with write access to the tap repo); skipped without it.
+      - name: Update Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          [ -n "$TAP_TOKEN" ] || { echo "no TAP_TOKEN; skipping"; exit 0; }
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(cut -d' ' -f1 "$ARCHIVE.sha256")
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          sed -e "s|@OWNER@|${GITHUB_REPOSITORY_OWNER}|g" -e "s|@VERSION@|${VERSION}|g" -e "s|@SHA256@|${SHA}|g" \
+            packaging/klinit.rb.in > tap/Formula/klinit.rb
+          cd tap
+          git config user.name "github-actions" && git config user.email "actions@github.com"
+          git add Formula/klinit.rb
+          git commit -m "klinit ${VERSION}" && git push

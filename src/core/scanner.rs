@@ -30,7 +30,7 @@ pub fn child_sizes(path: &Path) -> std::io::Result<Vec<(std::path::PathBuf, u64)
             (p, size)
         })
         .collect();
-    sizes.sort_by(|a, b| b.1.cmp(&a.1));
+    sizes.sort_by_key(|s| std::cmp::Reverse(s.1));
     Ok(sizes)
 }
 

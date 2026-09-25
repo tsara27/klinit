@@ -13,7 +13,7 @@ pub fn print_scan(rows: &[(&str, &str, Plan)], json: bool) -> anyhow::Result<()>
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
-    println!("{:<10} {:>6} {:>10}  {}", "CATEGORY", "ITEMS", "SIZE", "DESCRIPTION");
+    println!("{:<10} {:>6} {:>10}  DESCRIPTION", "CATEGORY", "ITEMS", "SIZE");
     for (id, desc, p) in rows {
         println!("{:<10} {:>6} {:>10}  {}", id, p.items.len(), format_size(p.total_size()), desc);
     }
@@ -39,7 +39,7 @@ pub fn print_clean(plan: &Plan, report: &Report, mode: Mode, json: bool) -> anyh
         return Ok(());
     }
     let mut items: Vec<_> = plan.items.iter().collect();
-    items.sort_by(|a, b| b.size.cmp(&a.size));
+    items.sort_by_key(|i| std::cmp::Reverse(i.size));
     for i in items.iter().take(20) {
         println!("{:>10}  [{}] {}", format_size(i.size), i.category, i.path.display());
     }
@@ -71,7 +71,7 @@ pub fn print_apps(apps: &[App], json: bool) -> anyhow::Result<()> {
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
-    println!("{:>10}  {:<32} {}", "SIZE", "NAME", "BUNDLE ID");
+    println!("{:>10}  {:<32} BUNDLE ID", "SIZE", "NAME");
     for a in apps {
         println!("{:>10}  {:<32} {}", format_size(a.size), a.name, a.bundle_id.as_deref().unwrap_or("-"));
     }

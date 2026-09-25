@@ -51,7 +51,7 @@ pub fn find_large(root: &Path, min_size: u64, older_than_days: u64) -> Vec<FileI
         .map(|(path, m)| FileInfo { path, size: m.len(), age_days: age_days(&m, now) })
         .filter(|f| f.size >= min_size && f.age_days >= older_than_days)
         .collect();
-    out.sort_by(|a, b| b.size.cmp(&a.size));
+    out.sort_by_key(|f| std::cmp::Reverse(f.size));
     out
 }
 
@@ -121,7 +121,7 @@ pub fn find_dupes(root: &Path, min_size: u64) -> Vec<DupeGroup> {
                 .collect::<Vec<_>>()
         })
         .collect();
-    groups.sort_by(|a, b| b.wasted().cmp(&a.wasted()));
+    groups.sort_by_key(|g| std::cmp::Reverse(g.wasted()));
     groups
 }
 

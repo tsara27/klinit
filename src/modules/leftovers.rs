@@ -48,7 +48,7 @@ pub fn scan(home: &Path, installed: &HashSet<String>) -> Plan {
             plan.items.push(Item { path, size, category: "leftovers".into(), reason: format!("no installed app has bundle ID {id}") });
         }
     }
-    plan.items.sort_by(|a, b| b.size.cmp(&a.size));
+    plan.items.sort_by_key(|i| std::cmp::Reverse(i.size));
     plan
 }
 
