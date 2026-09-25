@@ -1,195 +1,14 @@
 //! TUI state and its update function. No terminal or threads in here, so it is unit-testable:
 //! input becomes an `Action`, `act` mutates state and returns `Effect`s for the runner to perform.
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::crossterm::event::{MouseButton, MouseEventKind};
 
 use super::hit::HitMap;
+use super::model::*;
 use super::theme::Theme;
-use crate::core::executor::{Mode, Report};
-use crate::core::plan::{Category, Item, Plan};
+use crate::core::executor::Mode;
+use crate::core::plan::Plan;
 use crate::core::scanner::format_size;
-use crate::modules::apps::App as AppInfo;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Screen {
-    Dashboard,
-    Apps,
-    Cleanup,
-    Leftovers,
-    Large,
-    Dupes,
-}
-
-impl Screen {
-    pub const ALL: [Screen; 6] =
-        [Screen::Dashboard, Screen::Apps, Screen::Cleanup, Screen::Leftovers, Screen::Large, Screen::Dupes];
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Screen::Dashboard => "Dashboard",
-            Screen::Apps => "Apps",
-            Screen::Cleanup => "Cleanup",
-            Screen::Leftovers => "Leftovers",
-            Screen::Large => "Large files",
-            Screen::Dupes => "Duplicates",
-        }
-    }
-
-    pub fn kind(self) -> ScanKind {
-        match self {
-            Screen::Dashboard | Screen::Cleanup => ScanKind::Cleanup,
-            Screen::Apps => ScanKind::Apps,
-            Screen::Leftovers => ScanKind::Leftovers,
-            Screen::Large => ScanKind::Large,
-            Screen::Dupes => ScanKind::Dupes,
-        }
-    }
-
-    fn index(self) -> usize {
-        Self::ALL.iter().position(|s| *s == self).unwrap_or(0)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ScanKind {
-    Cleanup,
-    Apps,
-    Leftovers,
-    Large,
-    Dupes,
-}
-
-/// Something a key press or click asks for.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Action {
-    Quit,
-    Tab(Screen),
-    NextTab,
-    PrevTab,
-    Move(isize),
-    /// Select the row at this index.
-    Row(usize),
-    /// Select and tick/untick the row at this index.
-    Toggle(usize),
-    ToggleCurrent,
-    SelectAll,
-    Refresh,
-    Sort,
-    /// The screen's main button: clean, remove or uninstall.
-    Primary,
-    TogglePermanent,
-    Help,
-    Confirm,
-    Cancel,
-}
-
-/// Work for the runner; keeps `act` free of I/O.
-#[derive(Debug)]
-pub enum Effect {
-    Scan(ScanKind),
-    PlanUninstall(AppInfo),
-    Execute { plan: Plan, mode: Mode, apps: bool },
-}
-
-pub struct CatRow {
-    pub id: Category,
-    pub size: u64,
-    pub count: usize,
-}
-
-pub enum ScanResult {
-    Cleanup(Vec<(Category, &'static str, Plan)>),
-    Apps(Vec<AppInfo>),
-    List(ScanKind, Plan),
-}
-
-pub enum Msg {
-    Key(KeyEvent),
-    Mouse(MouseEvent),
-    Scanned(ScanResult),
-    Disk(Option<(u64, u64)>),
-    Planned(Result<Plan, String>),
-    Executed(Report, Mode),
-    Tick,
-}
-
-pub enum Load<T> {
-    Idle,
-    Loading,
-    Ready(T),
-}
-
-impl<T> Load<T> {
-    fn ready_mut(&mut self) -> Option<&mut T> {
-        match self {
-            Load::Ready(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-/// Plan items with a tick box each and a cursor.
-pub struct Checklist {
-    pub items: Vec<Item>,
-    pub checked: Vec<bool>,
-    pub selected: usize,
-    pub offset: usize,
-    pub warnings: Vec<String>,
-}
-
-impl Checklist {
-    pub fn new(items: Vec<Item>, warnings: Vec<String>, checked: bool) -> Self {
-        Self { checked: vec![checked; items.len()], items, selected: 0, offset: 0, warnings }
-    }
-
-    /// (ticked count, ticked bytes)
-    pub fn stats(&self) -> (usize, u64) {
-        self.items.iter().zip(&self.checked).filter(|(_, c)| **c).fold((0, 0), |(n, s), (i, _)| (n + 1, s + i.size))
-    }
-
-    pub fn plan(&self) -> Plan {
-        Plan {
-            items: self.items.iter().zip(&self.checked).filter(|(_, c)| **c).map(|(i, _)| i.clone()).collect(),
-            warnings: self.warnings.clone(),
-        }
-    }
-
-    fn toggle_all(&mut self) {
-        let all = self.checked.iter().all(|c| *c);
-        self.checked.fill(!all);
-    }
-}
-
-pub struct Reclaim {
-    pub rows: Vec<CatRow>,
-    pub list: Checklist,
-}
-
-pub struct AppsView {
-    pub apps: Vec<AppInfo>,
-    pub selected: usize,
-    pub offset: usize,
-    pub by_size: bool,
-}
-
-impl AppsView {
-    fn sort(&mut self) {
-        if self.by_size {
-            self.apps.sort_by_key(|a| std::cmp::Reverse(a.size));
-        } else {
-            self.apps.sort_by_key(|a| a.name.to_lowercase());
-        }
-        self.selected = 0;
-        self.offset = 0;
-    }
-}
-
-pub enum Dialog {
-    Confirm { title: String, lines: Vec<String>, plan: Plan, mode: Mode, apps: bool, stage: u8 },
-    Result { title: String, lines: Vec<String> },
-    Busy(String),
-    Help,
-}
 
 pub struct App {
     pub screen: Screen,
@@ -468,39 +287,6 @@ impl App {
         vec![]
     }
 
-    fn key_action(&self, key: KeyEvent) -> Option<Action> {
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            return matches!(key.code, KeyCode::Char('c')).then_some(Action::Quit);
-        }
-        if self.dialog.is_some() {
-            return match key.code {
-                KeyCode::Enter | KeyCode::Char('y') => Some(Action::Confirm),
-                KeyCode::Esc | KeyCode::Char('n' | 'q') => Some(Action::Cancel),
-                _ => None,
-            };
-        }
-        let page = self.view_rows.max(1) as isize;
-        Some(match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
-            KeyCode::Tab => Action::NextTab,
-            KeyCode::BackTab => Action::PrevTab,
-            KeyCode::Char(c @ '1'..='6') => Action::Tab(Screen::ALL[c as usize - '1' as usize]),
-            KeyCode::Up | KeyCode::Char('k') => Action::Move(-1),
-            KeyCode::Down | KeyCode::Char('j') => Action::Move(1),
-            KeyCode::PageUp => Action::Move(-page),
-            KeyCode::PageDown => Action::Move(page),
-            KeyCode::Home => Action::Move(isize::MIN / 2),
-            KeyCode::End => Action::Move(isize::MAX / 2),
-            KeyCode::Char(' ') => Action::ToggleCurrent,
-            KeyCode::Char('a') => Action::SelectAll,
-            KeyCode::Char('r') => Action::Refresh,
-            KeyCode::Char('s') => Action::Sort,
-            KeyCode::Char('d') => Action::TogglePermanent,
-            KeyCode::Char('?') => Action::Help,
-            KeyCode::Enter => Action::Primary,
-            _ => return None,
-        })
-    }
 
     pub fn update(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
@@ -592,7 +378,9 @@ fn ready<T>(l: &Load<T>) -> Option<&T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::crossterm::event::KeyEventKind;
+    use crate::core::executor::Report;
+    use crate::core::plan::{Category, Item};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
     fn item(name: &str, size: u64) -> Item {
         Item { path: format!("/tmp/{name}").into(), size, category: Category::Caches, reason: "r".into() }

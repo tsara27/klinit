@@ -2,7 +2,7 @@
 
 use ratatui::layout::{Position, Rect};
 
-use super::app::Action;
+use super::model::Action;
 
 #[derive(Default)]
 pub struct HitMap(Vec<(Rect, Action)>);

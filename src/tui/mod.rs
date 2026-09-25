@@ -4,6 +4,8 @@
 mod app;
 mod checklist;
 mod hit;
+mod input;
+mod model;
 mod theme;
 mod view;
 mod worker;
@@ -17,7 +19,8 @@ use anyhow::Result;
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseEventKind};
 
 use crate::core::safety::Guard;
-use app::{App, Msg};
+use app::App;
+use model::Msg;
 
 pub use checklist::select;
 

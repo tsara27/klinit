@@ -4,7 +4,7 @@ use std::sync::mpsc::Sender;
 use std::thread;
 
 use super::Ctx;
-use super::app::{Effect, Msg, ScanKind, ScanResult};
+use super::model::{Effect, Msg, ScanKind, ScanResult};
 use crate::core::executor;
 use crate::core::plan::{Category, Item, Plan};
 use crate::modules::{self, apps, large, leftovers};
