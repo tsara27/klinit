@@ -161,6 +161,14 @@ fn spinner(msg: &'static str, json: bool) -> indicatif::ProgressBar {
     pb
 }
 
+fn progress_bar(total: u64, hidden: bool) -> indicatif::ProgressBar {
+    if hidden || !std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+        return indicatif::ProgressBar::hidden();
+    }
+    let style = indicatif::ProgressStyle::with_template("{bar:30} {pos}/{len} {msg}").unwrap_or_else(|_| indicatif::ProgressStyle::default_bar());
+    indicatif::ProgressBar::new(total).with_style(style)
+}
+
 fn run_plan(plan: &core::plan::Plan, guard: Guard, yes: bool, permanent: bool, json: bool) -> Result<()> {
     run_plan_with(plan, guard, yes, permanent, json, Pick::All)
 }
@@ -179,8 +187,20 @@ fn run_plan_with(plan: &core::plan::Plan, guard: Guard, yes: bool, permanent: bo
         (true, false) => Mode::Trash,
         (true, true) => Mode::Permanent,
     };
+    if mode == Mode::Permanent {
+        let blocked = plan.trash_only().count();
+        anyhow::ensure!(
+            blocked == 0,
+            "--permanent cannot be used here: {blocked} item(s) are app bundles or app data and can only be moved to the Trash. Re-run without --permanent"
+        );
+    }
     let log = guard.home().join(".local/state/klinit/actions.log");
-    let result = executor::execute(plan, &guard, mode, Some(&log));
+    let pb = progress_bar(plan.items.len() as u64, json || mode == Mode::DryRun);
+    let result = executor::execute_with_progress(plan, &guard, mode, Some(&log), &mut |done, _, path| {
+        pb.set_position(done as u64);
+        pb.set_message(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+    });
+    pb.finish_and_clear();
     report::print_clean(plan, &result, mode, json)
 }
 

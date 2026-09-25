@@ -29,9 +29,23 @@ impl Report {
 
 /// The only place that deletes anything. Every item is re-checked by the guard at
 /// execution time, so a stale or tampered plan cannot bypass it. Actions are appended to `log`.
+#[cfg(test)]
 pub fn execute(plan: &Plan, guard: &Guard, mode: Mode, log: Option<&Path>) -> Report {
+    execute_with_progress(plan, guard, mode, log, &mut |_, _, _| {})
+}
+
+/// Like `execute`, calling `on_progress(done, total, path)` before each item is processed.
+pub fn execute_with_progress(
+    plan: &Plan,
+    guard: &Guard,
+    mode: Mode,
+    log: Option<&Path>,
+    on_progress: &mut dyn FnMut(usize, usize, &Path),
+) -> Report {
     let mut report = Report::default();
-    for item in &plan.items {
+    let total = plan.items.len();
+    for (done, item) in plan.items.iter().enumerate() {
+        on_progress(done, total, &item.path);
         let real = match guard.check(&item.path) {
             Ok(p) => p,
             Err(v) => {
@@ -39,6 +53,11 @@ pub fn execute(plan: &Plan, guard: &Guard, mode: Mode, log: Option<&Path>) -> Re
                 continue;
             }
         };
+        if mode == Mode::Permanent && !item.category.allows_permanent() {
+            let why = format!("{} items can only be moved to the Trash, not deleted permanently", item.category);
+            report.skipped.push((item.path.clone(), why));
+            continue;
+        }
         let result = match mode {
             Mode::DryRun => Ok(()),
             Mode::Trash => trash::delete(&real).map_err(|e| e.to_string()),
@@ -109,6 +128,20 @@ mod tests {
         assert_eq!(r.removed.len(), 1);
         assert!(!target.exists());
         assert!(fs::read_to_string(log).unwrap().contains("Permanent"));
+    }
+
+    #[test]
+    fn permanent_refuses_unrecoverable_categories_but_trash_allows_them() {
+        let (dir, g) = fixture();
+        let target = dir.path().join("Library/Caches/app");
+        let app = Item { category: Category::App, ..item(target.clone()) };
+        let plan = Plan { items: vec![app], ..Default::default() };
+        let r = execute(&plan, &g, Mode::Permanent, None);
+        assert!(r.removed.is_empty());
+        assert!(r.skipped[0].1.contains("Trash"));
+        assert!(target.exists());
+        // DryRun and Trash are unaffected.
+        assert_eq!(execute(&plan, &g, Mode::DryRun, None).removed.len(), 1);
     }
 
     #[test]

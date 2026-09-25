@@ -182,6 +182,10 @@ impl App {
         if plan.items.len() > 6 {
             lines.push(format!("…and {} more", plan.items.len() - 6));
         }
+        let blocked = if mode == Mode::Permanent { plan.trash_only().count() } else { 0 };
+        if blocked > 0 {
+            lines.push(format!("note: {blocked} app item(s) cannot be deleted permanently and will be skipped; turn off permanent mode (d) to Trash them."));
+        }
         lines.extend(plan.warnings.iter().take(3).map(|w| format!("note: {w}")));
         Dialog::Confirm { title: "Confirm".into(), lines, plan, mode, apps, stage: 0 }
     }
@@ -314,6 +318,12 @@ impl App {
                     Ok(plan) => self.confirm_dialog(plan, true),
                     Err(e) => Self::info("Cannot uninstall", vec![e]),
                 });
+                vec![]
+            }
+            Msg::Progress { done, total, name } => {
+                if let Some(Dialog::Busy(m)) = &mut self.dialog {
+                    *m = format!("Removing {}/{total}: {name}", done + 1);
+                }
                 vec![]
             }
             Msg::Executed(report, mode) => {
@@ -463,6 +473,19 @@ mod tests {
         assert!(app.act(Action::Confirm).is_empty(), "first confirm only escalates");
         assert!(matches!(app.dialog, Some(Dialog::Confirm { stage: 1, .. })));
         assert!(matches!(app.act(Action::Confirm).as_slice(), [Effect::Execute { mode: Mode::Permanent, .. }]));
+    }
+
+    #[test]
+    fn permanent_confirm_warns_about_trash_only_items() {
+        let mut app = with_leftovers();
+        if let Load::Ready(l) = &mut app.leftovers {
+            l.items[0].category = Category::Leftover;
+        }
+        app.act(Action::SelectAll);
+        app.act(Action::TogglePermanent);
+        app.act(Action::Primary);
+        let Some(Dialog::Confirm { lines, .. }) = &app.dialog else { panic!("expected confirm") };
+        assert!(lines.iter().any(|l| l.contains("1 app item(s) cannot be deleted permanently")));
     }
 
     #[test]

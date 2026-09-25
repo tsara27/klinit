@@ -13,7 +13,7 @@ use crate::platform;
 pub fn spawn(effect: Effect, ctx: &Ctx, tx: &Sender<Msg>) {
     let (ctx, tx) = (ctx.clone(), tx.clone());
     thread::spawn(move || {
-        for msg in run(effect, &ctx) {
+        for msg in run(effect, &ctx, &tx) {
             if tx.send(msg).is_err() {
                 break;
             }
@@ -21,14 +21,17 @@ pub fn spawn(effect: Effect, ctx: &Ctx, tx: &Sender<Msg>) {
     });
 }
 
-fn run(effect: Effect, ctx: &Ctx) -> Vec<Msg> {
+fn run(effect: Effect, ctx: &Ctx, tx: &Sender<Msg>) -> Vec<Msg> {
     match effect {
         Effect::Scan(kind) => scan(kind, ctx),
         Effect::PlanUninstall(app) => vec![Msg::Planned(plan_uninstall(&app, ctx))],
         Effect::Execute { plan, mode, apps } => {
             let guard = if apps { &ctx.app_guard } else { &ctx.guard };
             let log = ctx.home.join(".local/state/klinit/actions.log");
-            let report = executor::execute(&plan, guard, mode, Some(&log));
+            let report = executor::execute_with_progress(&plan, guard, mode, Some(&log), &mut |done, total, path| {
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                let _ = tx.send(Msg::Progress { done, total, name });
+            });
             vec![Msg::Executed(report, mode), Msg::Disk(platform::disk_usage(&ctx.home))]
         }
     }

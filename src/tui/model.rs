@@ -105,6 +105,7 @@ pub enum Msg {
     Scanned(ScanResult),
     Disk(Option<(u64, u64)>),
     Planned(Result<Plan, String>),
+    Progress { done: usize, total: usize, name: String },
     Executed(Report, Mode),
     Tick,
 }

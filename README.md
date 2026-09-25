@@ -133,7 +133,7 @@ default_categories = ["caches", "logs"]
 - Run a dry run first and read the list.
 - Paths are resolved through symlinks and `..` before checking, so a link cannot smuggle a protected folder into a plan.
 - Running apps are not uninstalled. Cleaning caches while an app is open is allowed, so quit apps first if you want to be careful.
-- Trash is recoverable; `--permanent` is not.
+- Trash is recoverable; `--permanent` is not. App bundles and app data (uninstall, leftovers) always go to the Trash: `--permanent` skips them with a message.
 
 ## Development
 

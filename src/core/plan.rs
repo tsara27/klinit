@@ -44,6 +44,13 @@ impl Category {
         }
     }
 
+    /// Whether items of this kind may be deleted without going through the Trash.
+    /// Caches, logs and files the user picked by hand are fine; app bundles and their data
+    /// cannot be regenerated, so those always go to the Trash where they can be restored.
+    pub fn allows_permanent(self) -> bool {
+        !matches!(self, Category::App | Category::Leftover | Category::Fuzzy | Category::Orphaned)
+    }
+
     /// Emptying the Trash is irreversible, so bulk selections leave it out.
     pub fn is_trash(self) -> bool {
         self == Category::Trash
@@ -88,6 +95,11 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Items that may not be deleted permanently (see `Category::allows_permanent`).
+    pub fn trash_only(&self) -> impl Iterator<Item = &Item> {
+        self.items.iter().filter(|i| !i.category.allows_permanent())
+    }
+
     pub fn total_size(&self) -> u64 {
         self.items.iter().map(|i| i.size).sum()
     }
