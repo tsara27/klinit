@@ -1,10 +1,14 @@
 mod core;
+mod modules;
+mod report;
 
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+use core::executor::{self, Mode};
+use core::safety::Guard;
 use core::scanner::{child_sizes, format_size};
 
 #[derive(Parser)]
@@ -22,6 +26,23 @@ enum Command {
         /// Number of entries to show
         #[arg(short = 'n', long, default_value_t = 15)]
         top: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show reclaimable space per category
+    Scan {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clean categories (dry run unless --yes): caches, logs, trash, xcode, browsers, dev, all
+    Clean {
+        categories: Vec<String>,
+        /// Actually delete (moves to Trash)
+        #[arg(long)]
+        yes: bool,
+        /// With --yes, delete permanently instead of using the Trash
+        #[arg(long)]
+        permanent: bool,
         #[arg(long)]
         json: bool,
     },
@@ -53,6 +74,20 @@ fn main() -> Result<()> {
                 }
                 println!("{:>10}  total", format_size(sizes.iter().map(|(_, s)| s).sum()));
             }
+        }
+        Command::Scan { json } => report::print_scan(&modules::scan_all(&home_dir()?), json)?,
+        Command::Clean { categories, yes, permanent, json } => {
+            let home = home_dir()?;
+            let plan = modules::build_plan(&home, &categories)?;
+            let guard = Guard::new(&home)?;
+            let mode = match (yes, permanent) {
+                (false, _) => Mode::DryRun,
+                (true, false) => Mode::Trash,
+                (true, true) => Mode::Permanent,
+            };
+            let log = guard.home().join(".local/state/klinit/actions.log");
+            let result = executor::execute(&plan, &guard, mode, Some(&log));
+            report::print_clean(&plan, &result, mode, json)?;
         }
     }
     Ok(())

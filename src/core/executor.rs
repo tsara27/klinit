@@ -92,7 +92,7 @@ mod tests {
     fn dry_run_touches_nothing() {
         let (dir, g) = fixture();
         let target = dir.path().join("Library/Caches/app");
-        let plan = Plan { items: vec![item(target.clone())] };
+        let plan = Plan { items: vec![item(target.clone())], ..Default::default() };
         let r = execute(&plan, &g, Mode::DryRun, None);
         assert_eq!(r.removed.len(), 1);
         assert!(target.exists());
@@ -103,7 +103,7 @@ mod tests {
         let (dir, g) = fixture();
         let target = dir.path().join("Library/Caches/app");
         let log = dir.path().join("state/actions.log");
-        let plan = Plan { items: vec![item(target.clone())] };
+        let plan = Plan { items: vec![item(target.clone())], ..Default::default() };
         let r = execute(&plan, &g, Mode::Permanent, Some(&log));
         assert_eq!(r.removed.len(), 1);
         assert!(!target.exists());
@@ -114,7 +114,7 @@ mod tests {
     fn protected_items_are_skipped_even_in_plan() {
         let (dir, g) = fixture();
         let docs = dir.path().join("Documents");
-        let plan = Plan { items: vec![item(docs.clone())] };
+        let plan = Plan { items: vec![item(docs.clone())], ..Default::default() };
         let r = execute(&plan, &g, Mode::Permanent, None);
         assert!(r.removed.is_empty());
         assert_eq!(r.skipped.len(), 1);

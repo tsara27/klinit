@@ -14,6 +14,9 @@ pub struct Item {
 #[derive(Debug, Default, Serialize)]
 pub struct Plan {
     pub items: Vec<Item>,
+    /// Non-fatal problems found while scanning, e.g. a directory that needs Full Disk Access.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 impl Plan {
