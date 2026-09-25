@@ -2,6 +2,7 @@ use crate::core::executor::{Mode, Report};
 use crate::core::plan::Plan;
 use crate::core::scanner::format_size;
 use crate::modules::apps::App;
+use crate::modules::large::{DupeGroup, FileInfo};
 
 pub fn print_scan(rows: &[(&str, &str, Plan)], json: bool) -> anyhow::Result<()> {
     if json {
@@ -75,5 +76,43 @@ pub fn print_apps(apps: &[App], json: bool) -> anyhow::Result<()> {
         println!("{:>10}  {:<32} {}", format_size(a.size), a.name, a.bundle_id.as_deref().unwrap_or("-"));
     }
     println!("{:>10}  {} apps", format_size(apps.iter().map(|a| a.size).sum()), apps.len());
+    Ok(())
+}
+
+pub fn print_plan(plan: &Plan, json: bool) -> anyhow::Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(plan)?);
+        return Ok(());
+    }
+    for i in &plan.items {
+        println!("{:>10}  {}", format_size(i.size), i.path.display());
+    }
+    println!("{:>10}  {} items", format_size(plan.total_size()), plan.items.len());
+    Ok(())
+}
+
+pub fn print_files(files: &[FileInfo], json: bool) -> anyhow::Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(files)?);
+        return Ok(());
+    }
+    for f in files {
+        println!("{:>10}  {:>5}d  {}", format_size(f.size), f.age_days, f.path.display());
+    }
+    Ok(())
+}
+
+pub fn print_dupes(groups: &[DupeGroup], json: bool) -> anyhow::Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(groups)?);
+        return Ok(());
+    }
+    for g in groups {
+        println!("{} wasted ({} copies of {})", format_size(g.wasted()), g.files.len(), format_size(g.size));
+        for (i, f) in g.files.iter().enumerate() {
+            println!("  {} {}", if i == 0 { "keep  " } else { "extra " }, f.path.display());
+        }
+    }
+    println!("{} reclaimable in {} groups", format_size(groups.iter().map(|g| g.wasted()).sum()), groups.len());
     Ok(())
 }

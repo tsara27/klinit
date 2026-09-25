@@ -62,6 +62,47 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Orphaned support files from apps that are no longer installed (report only unless --remove)
+    Leftovers {
+        /// Build a removal plan (still a dry run unless --yes)
+        #[arg(long)]
+        remove: bool,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        permanent: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Find large or old files (report only)
+    Large {
+        path: Option<PathBuf>,
+        /// Minimum size in MB
+        #[arg(long, default_value_t = 100)]
+        min_mb: u64,
+        /// Only files not modified for this many days
+        #[arg(long, default_value_t = 0)]
+        older_than: u64,
+        #[arg(short = 'n', long, default_value_t = 30)]
+        top: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Find duplicate files (report only unless --remove-extras, which keeps the oldest copy)
+    Dupes {
+        path: Option<PathBuf>,
+        /// Minimum size in KB
+        #[arg(long, default_value_t = 100)]
+        min_kb: u64,
+        #[arg(long)]
+        remove_extras: bool,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        permanent: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// List installed apps with size
     Apps {
         #[arg(long)]
@@ -121,6 +162,35 @@ fn main() -> Result<()> {
         Command::Apps { json } => {
             let apps = apps::discover(&app_dirs(&home_dir()?));
             report::print_apps(&apps, json)?;
+        }
+        Command::Leftovers { remove, yes, permanent, json } => {
+            let home = home_dir()?;
+            let ids = apps::discover(&app_dirs(&home)).into_iter().filter_map(|a| a.bundle_id).collect();
+            let plan = modules::leftovers::scan(&home, &ids);
+            if remove {
+                run_plan(&plan, Guard::new(&home)?, yes, permanent, json)?;
+            } else {
+                report::print_plan(&plan, json)?;
+                if !json {
+                    println!("Report only. Review the list, then use --remove (and --yes) to clean it up.");
+                }
+            }
+        }
+        Command::Large { path, min_mb, older_than, top, json } => {
+            let root = match path { Some(p) => p, None => home_dir()? };
+            let files = modules::large::find_large(&root, min_mb * 1_000_000, older_than);
+            report::print_files(&files[..files.len().min(top)], json)?;
+        }
+        Command::Dupes { path, min_kb, remove_extras, yes, permanent, json } => {
+            let home = home_dir()?;
+            let root = path.unwrap_or_else(|| home.clone());
+            let groups = modules::large::find_dupes(&root, min_kb * 1000);
+            if remove_extras {
+                let plan = modules::large::extras_plan(&groups);
+                run_plan(&plan, Guard::new(&home)?, yes, permanent, json)?;
+            } else {
+                report::print_dupes(&groups, json)?;
+            }
         }
         Command::Uninstall { app, yes, permanent, include_fuzzy, json } => {
             let home = home_dir()?;
