@@ -1,6 +1,10 @@
+<p align="center">
+<img width="503" height="674" alt="Klinin Logo" src="https://github.com/user-attachments/assets/f728577d-784b-479a-bc51-7f74551ece56" />
+</p>
+
 # klinit
 
-A CleanMyMac-style cleanup tool for the macOS command line, written in Rust.
+A cleanup tool for the macOS command line, written in Rust.
 
 - **Dry run by default.** Nothing is deleted until you pass `--yes`.
 - **Trash by default.** Deleted items go to the Trash; `--permanent` skips it.
